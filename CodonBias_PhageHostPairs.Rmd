@@ -11,7 +11,7 @@ output:
 
 # I. Setup
 
-This code should work if you keep the same data organization as the github page and if you're RStudio. 
+This code should work if you keep the same data organization as the github page and if you're using RStudio. 
 If for some reason it does not work, you can set your working directory on the first line. 
 
 Load libraries
