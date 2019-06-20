@@ -11,9 +11,13 @@ output:
 
 # I. Setup
 
+This code should work if you keep the same data organization as the github page and if you're RStudio. 
+If for some reason it does not work, you can set your working directory on the first line. 
+
 Load libraries
 ```{r setwd_and_loadpackages, message = FALSE, warning = FALSE}
 # Create reset directory
+#setwd()
 reset_dir <- getwd()
 
 # Load libraries
@@ -1024,8 +1028,6 @@ for(i in 1:ncol(reformatted_all)){
   # Store values
   reformatted_all[, i] <- vec_value
 }
-
-
 ```
 
 Testing randomly picking values
