@@ -1,0 +1,1144 @@
+---
+title: "Codon Biases Between Hosts and Their Phages"
+author: "Eric Bastien and Melissa Duhaime"
+date: "6/12/2019"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 4
+    toc_float: no
+---
+
+# I. Setup
+
+Load libraries
+```{r setwd_and_loadpackages, message = FALSE, warning = FALSE}
+# Set working directory
+setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/")
+
+# Load libraries
+library(ggplot2)
+library(seqinr)
+library(dplyr)
+library(forcats)
+library(reshape2)
+library(Biostrings)
+library(DT)
+library(lsa)
+library(gridExtra)
+library(openxlsx)
+library(stringr)
+
+# The following code makes teh title aligned in the center for all graphs:
+theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+The following code in the code chunk was copied from this website page: https://rpubs.com/Koundy/71792. It is a theme for ggplot that is appropriate for publishing. 
+The code was modified slightly. The legend.margin function from ggplot was changed, so I replaced it with legend.spacing. I replaced "helvetica" by "Helvitica"
+```{r set_ggplot_theme}
+# Theme Publication for ggplot
+theme_Publication <- function(base_size = 14, base_family = "Helvetica") {
+      library(grid)
+      library(ggthemes)
+      (theme_foundation(base_size = base_size, base_family = base_family)
+       + theme(plot.title = element_text(face = "bold", size = rel(1.2), hjust = 0.5),
+               text = element_text(),
+               panel.background = element_rect(colour = NA),
+               plot.background = element_rect(colour = NA),
+               panel.border = element_rect(colour = NA),
+               axis.title = element_text(face = "bold",size = rel(1)),
+               axis.title.y = element_text(angle = 90,vjust = 2),
+               axis.title.x = element_text(vjust = -0.2),
+               axis.text = element_text(), 
+               axis.line = element_line(colour = "black"),
+               axis.ticks = element_line(),
+               panel.grid.major = element_line(colour = "#f0f0f0"),
+               panel.grid.minor = element_blank(),
+               legend.key = element_rect(colour = NA),
+               legend.position = "bottom",
+               legend.direction = "horizontal",
+               legend.key.size = unit(0.2, "cm"),
+               legend.spacing = unit(0, "cm"),
+               legend.title = element_text(face = "italic"),
+               plot.margin = unit(c(10,5,5,5),"mm"),
+               strip.background = element_rect(colour = "#f0f0f0", fill = "#f0f0f0"),
+               strip.text = element_text(face = "bold")
+          ))
+}
+
+# Set theme for this document
+theme_set(theme_Publication())
+```
+
+# II. A Tale of Two Different Phage Lifestyle: A Comparison between HS2 and HP1
+
+The previous section focused on all Helgoland phages. Here we will just contrast HS2 and HP1 against the full PSA sequence!
+
+## 1. Setup: Load Sequences, Compute Codon Usage Indices 
+
+### A. Load the phages sequences
+
+Loading HS2 and HP1 sequences. 
+```{r load_fasta_PSAphages}
+# Set working directory
+setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Phages/Helgoland/")
+
+# Load fasta files
+seq_HP1 <- as.SeqFastadna(read.fasta(file = "HP1_2582581228.fna", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+seq_HS2 <- as.SeqFastadna(read.fasta(file = "HS2_2582581232.fna", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+
+# Retrieve sequences only for each Helgoland phages
+seq_HP1 <- seq_HP1[[1]]
+seq_HS2 <- seq_HS2[[1]]
+```
+
+Now, let's load the host sequences. For PSA, it has two chromosomes. I also have a version where the two chromosomes are linked together. I will load all the two different versions. 
+```{r load_fasta_PSAhost}
+# Set working directory
+setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Host/")
+
+# Load PSA sequence (original file)
+seq_PSA <- as.SeqFastadna(read.fasta(file = "PSA_1315_PacBio_final.assembly.fasta", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+# Load combined PSA sequence
+seq_PSACombined <- as.SeqFastadna(read.fasta(file = "PSA_combined.fasta", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+
+# Retrive sequence only
+seq_PSA_chr1 <- seq_PSA[[1]]
+seq_PSA_chr2 <- seq_PSA[[2]]
+seq_PSACombined <- seq_PSACombined[[1]]
+```
+
+### B. Compute Codon Usage Indices (uco)
+
+Codon usage indices includes the codon counts, the relative frequencies and the relative synonymous codon usage. The uco will be computed individually for each sequences (phage and host), then combined. 
+```{r compute_uco_PSAandPhages}
+# Compute uco for Helgoland phages
+uco_HP1 <- uco(seq_HP1, as.data.frame = TRUE)
+uco_HS2 <- uco(seq_HS2, as.data.frame = TRUE)
+
+# Compute uco for PSA (chr1, chr2 and combined)
+uco_PSA_chr1 <- uco(seq_PSA_chr1, as.data.frame = TRUE)
+uco_PSA_chr2 <- uco(seq_PSA_chr2, as.data.frame = TRUE)
+uco_PSACombined <- uco(seq_PSACombined, as.data.frame = TRUE)
+```
+
+I will add a new column for each of those tables that contains the organism name, then combine them into a table. 
+```{r combine_uco_PSAandPhages}
+# Add column
+uco_HP1["Org"] <- "HP1"
+uco_HS2["Org"] <- "HS2"
+
+uco_PSA_chr1["Org"] <- "PSA_chr1"
+uco_PSA_chr2["Org"] <- "PSA_chr2"
+uco_PSACombined["Org"] <- "PSA_fullseq"
+
+# Combine the dataframes
+dt_Helgoland <- rbind(uco_PSACombined, uco_PSA_chr1, uco_PSA_chr2, uco_HP1, uco_HS2)
+```
+
+The function uco is neat because it contains the amino acids and codon columns. Here, I will retrieve those two columns so I can use this table to convert codon to amino acids for other purposes later in this code. 
+```{r dt_aa_codon}
+# Create amino acids to codon table
+dt_aa_codon <- uco_PSA_chr1[ , 1:2]
+```
+
+## 2. RSCU Comparison between PSA 13-15 and its Phages, HS2 and HP1
+
+### A. Create RSCU Matrix
+
+We are interested in comparing the Relative Synonymous Codon Usage (RSCU) between the Helgoland phages and its host PSA. RSCU values are the number of times a particular codon is observed, relative to the number of times that the codon would be observed for a uniform synonymous codon usage (i.e. all the codons for a given amino-acid have the same probability). In the absence of any codon usage bias, the RSCU values would be 1.00 (this is the case for sequence cds in the exemple thereafter). A codon that is used less frequently than expected will have an RSCU value of less than 1.00 and vice versa for a codon that is used more frequently than expected.
+
+In order to contrast them, I am making a matrix of RSCU values, for each column contains the vector of RSCU for a single organism, and each row is the RSCU for a particular codon (number of columns = # of organisms, number of rows = 64). Since I will need to repeat this process multiple times for other phage-host systems, first I am making a function, uco_mat.
+```{r func_uco_mat}
+# Function
+uco_mat <- function(uco_dt){
+  
+  # Initialize matrix to be returned
+  mat_toreturn <- matrix(NA, nrow = 64, ncol = length(unique(uco_dt$Org)))
+  rownames(mat_toreturn) <- rownames(uco_dt[1:64, ])
+  colnames(mat_toreturn) <- unique(uco_dt$Org)
+  #return(mat_toreturn) #worked
+  
+  # Populate matrix
+  for(i in 1:ncol(mat_toreturn)){
+    temp_subset <- uco_dt[which(uco_dt$Org == colnames(mat_toreturn)[i]), ]
+    for(j in 1:nrow(mat_toreturn)){
+      mat_toreturn[j, i] <- temp_subset$RSCU[j]
+    }
+  }
+  
+  # Return matrix
+  return(mat_toreturn)
+  
+}
+```
+
+Let's apply the function on the Helgoland dataframe. I will also convert the output, the RSCU matrix, into a dataframe, then melt it so I can plot it.
+```{r compute_RSCUmat_Helgoland, message = FALSE}
+# Create RSCU matrix for Helgoland system
+RSCU_mat_Helgoland <- uco_mat(dt_Helgoland)
+
+# Convert to dataframe
+RSCU_dt_Helgoland <- as.data.frame(RSCU_mat_Helgoland)
+RSCU_dt_Helgoland["Codons"] <- rownames(RSCU_dt_Helgoland)
+
+# Melt dataframe; this uses the Codon as id variables automatically
+RSCU_dt_Helgoland_melted <- melt(RSCU_dt_Helgoland)
+colnames(RSCU_dt_Helgoland_melted) <- c("Codons", "Org", "RSCUvalue")
+```
+
+### B. Dotplot: Comparison of RSCU values between PSA and its Phages
+
+Making a dot plot, where the x axis is RSCU value, and the y axis are all the different codons; organized by increasing RSCU average value. Again, a value 1 indicates that the codon is not biased, a smaller value indicates that this particular codon is not as present whereas a larger value indicates that the codon is used more frequently than expected. There are two special cases, TGG (coding for Tryptophan) and ATG (coding for methionine); there are only 1 codon that encode Trp and 1 codon that encode Met, so there can be no biases for those two codons. 
+```{r dotplot_RSCUbetween_PSAandPhages, fig.dim = c(7, 11), fig.align = 'center'}
+# Reorganize factors by RSCU mean
+RSCU_dt_Helgoland_melted$Codons <- reorder(RSCU_dt_Helgoland_melted$Codons, RSCU_dt_Helgoland_melted$RSCUvalue, FUN = mean)
+
+# Dot plot, RSCU values vs Codons, colored by Organisms
+ggplot(data = RSCU_dt_Helgoland_melted, mapping = aes(x = RSCUvalue, y = Codons, color = Org)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c( "HP1" = "#FFDE16",  "HS2" = "#0F75BC", "PSA_chr1" = "#56B4E9", "PSA_chr2" = "#CC79A7", "PSA_fullseq" = "#999999")) +
+  labs(
+    x = "RSCU Value", 
+    color = "Organism"
+  )
+```
+
+## 3. RSCU Difference Comparison between PSA and its Phages
+
+Since codon bias can be an indicator of phage-host co-evolution, I want to remake the previous plots but this time let's use the difference in tbe RSCU between PSA and its phages. My hypothesis is that the smaller the difference is, the stronger the co-evolution signal is. We will see similar patterns as the previous plots, where for instance HP1 is significantly more different than the other phages.
+
+### A. Create RSCU Matrix Difference
+
+First, I will need to create a matrix of RSCU difference. I will use the full PSA sequence (rather than chromosome 1 or chromosome 2).
+```{r compute_RSCUdiff_PSAandPhages}
+# Initialize empty matrix to be filled
+RSCUdiff_mat_Helgoland <- matrix(NA, nrow = 64, ncol = ncol(RSCU_mat_Helgoland) - 1)
+rownames(RSCUdiff_mat_Helgoland) <- rownames(RSCU_mat_Helgoland)
+colnames(RSCUdiff_mat_Helgoland) <- colnames(RSCU_mat_Helgoland)[2:ncol(RSCU_mat_Helgoland)]
+
+# Populate matrix
+for(i in 1:ncol(RSCUdiff_mat_Helgoland)){
+  temp_diff <- RSCU_mat_Helgoland[ , "PSA_fullseq"] - RSCU_mat_Helgoland[ , i + 1]
+  RSCUdiff_mat_Helgoland[ , i] <- temp_diff
+}
+
+# Convert matrix into a dataframe
+RSCUdiff_dt_Helgoland <- as.data.frame(t(RSCUdiff_mat_Helgoland))
+
+# Add organism column 
+RSCUdiff_dt_Helgoland["Org"] <- colnames(RSCUdiff_mat_Helgoland)
+
+# Melt dataframe
+RSCUdiff_dt_Helgoland_melted <- melt(RSCUdiff_dt_Helgoland)
+
+# Add amino acids information
+RSCUdiff_dt_Helgoland_melted["aa"] <- NA
+for(i in 1:nrow(RSCUdiff_dt_Helgoland_melted)){
+  curr_codon <- RSCUdiff_dt_Helgoland_melted$variable[i]
+  amino_acid <- as.character(dt_aa_codon$AA[which(dt_aa_codon$codon == curr_codon)])
+  RSCUdiff_dt_Helgoland_melted$aa[i] <- amino_acid
+}
+
+# Rename columns
+colnames(RSCUdiff_dt_Helgoland_melted) <- c("Org", "Codon", "RSCUdiff", "aa")
+```
+
+### B. Boxplot: RSCU Difference for PSA and its Phages
+
+Boxplot of variance in the RSCU difference. 
+```{r boxplot_RSCUdiff_PSAandPhages, fig.dim = c(8, 6), fig.align = 'center'}
+# Boxplot of the RSCU differences
+ggplot(data = RSCUdiff_dt_Helgoland_melted, mapping = aes(x = Org, y = RSCUdiff)) +
+  geom_boxplot() +
+  labs(
+    x = "Organism Name", 
+    y = "RSCU Difference (against PSA full sequence)"
+  )
+```
+
+### C. Dotplot: RSCU Difference (against PSA) vs Codons
+
+Dotplot of RSCU differences. 
+```{r dotplot_RSCUdiff_PSAandPhages, fig.dim = c(7, 11), fig.align = 'center'}
+# Reorder factor levels by mean of RSCU difference
+RSCUdiff_dt_Helgoland_melted$Codon <- reorder(RSCUdiff_dt_Helgoland_melted$Codon, RSCUdiff_dt_Helgoland_melted$RSCUdiff, FUN = mean)
+
+# Dotplot
+ggplot(data = RSCUdiff_dt_Helgoland_melted, mapping = aes(x = RSCUdiff, y = Codon, color = Org)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c( "HP1" = "#FFDE16",  "HS2" = "#0F75BC", "PSA_chr1" = "#56B4E9", "PSA_chr2" = "#CC79A7")) +
+  labs(
+    x = "Organism Name", 
+    y = "RSCU Difference (against PSA full sequence)"
+  )
+```
+
+### D. Determine Codon Outliers for each Phage
+
+I am interested to know which codons are the outliers for each phage (below 5% and above 95%). 
+```{r HelgolandPhages_RSCU_outliers}
+### HP1
+# Subset dataframe
+HP1_melted_uco <- as.data.frame(RSCUdiff_dt_Helgoland_melted[which(RSCUdiff_dt_Helgoland_melted$Org == "HP1"), ])
+# Determine the quantiles for HP1
+HP1_quant <- quantile(HP1_melted_uco$RSCUdiff, probs = seq(0, 1, 0.05))
+# Subset by 5% and 95% quantiles RSCUdiffs
+HP1_qtile5 <- as.numeric(HP1_quant["5%"])
+HP1_qtile95 <- as.numeric(HP1_quant["95%"])
+HP1_subset5 <- HP1_melted_uco[which(HP1_melted_uco$RSCUdiff < HP1_qtile5), ]
+HP1_subset95 <- HP1_melted_uco[which(HP1_melted_uco$RSCUdiff > HP1_qtile95), ]
+
+### HS2
+# Subset dataframe
+HS2_melted_uco <- as.data.frame(RSCUdiff_dt_Helgoland_melted[which(RSCUdiff_dt_Helgoland_melted$Org == "HS2"), ])
+# Determine the quantiles for HS2
+HS2_quant <- quantile(HS2_melted_uco$RSCUdiff, probs = seq(0, 1, 0.05))
+# Subset by 5% and 95% quantiles RSCUdiffs
+HS2_qtile5 <- as.numeric(HS2_quant["5%"])
+HS2_qtile95 <- as.numeric(HS2_quant["95%"])
+HS2_subset5 <- HS2_melted_uco[which(HS2_melted_uco$RSCUdiff < HS2_qtile5), ]
+HS2_subset95 <- HS2_melted_uco[which(HS2_melted_uco$RSCUdiff > HS2_qtile95), ]
+```
+
+Combine the outliers dataframes, add a new column in my RSCU difference dataframe to contain information about the outliers. 
+```{r format_RSCUoutliers}
+# First, combine the quantiles dataframes
+HP1_outliers <- rbind(HP1_subset5, HP1_subset95)
+HS2_outliers <- rbind(HS2_subset5, HS2_subset95)
+
+# Add a new column to the meled_uco dataframe that contains the outliers information 
+RSCUdiff_dt_Helgoland_melted["Outliers"] <- NA
+
+# Populate new column
+for(i in 1:nrow(HP1_outliers)){
+  curr_RSCUdiff <- HP1_outliers$RSCUdiff[i]
+  RSCUdiff_dt_Helgoland_melted$Outliers[RSCUdiff_dt_Helgoland_melted$RSCUdiff == curr_RSCUdiff] <- "outlier"
+}
+
+for(i in 1:nrow(HS2_outliers)){
+  curr_RSCUdiff <- HS2_outliers$RSCUdiff[i]
+  RSCUdiff_dt_Helgoland_melted$Outliers[RSCUdiff_dt_Helgoland_melted$RSCUdiff == curr_RSCUdiff] <- "outlier"
+}
+```
+
+### E. Dotplot: RSCU Difference (against PSA) vs Codons with Outliers Circled
+
+First, I am making a function that allows me tp pick condition for circling for ggplot
+```{r func_pick_forggplot, message = FALSE}
+# Create function to pick condition for ggplotting
+pick <- function(condition){
+  function(d) d %>% filter_(condition)
+}
+```
+
+Now let's make a similar plot as before, but this time let's circle the outliers for each phage.
+```{r dotplot_RSCUdiff_PSAandPhages_outliers, fig.dim = c(7, 11), fig.align = 'center'}
+# Dotplot
+ggplot(data = RSCUdiff_dt_Helgoland_melted, mapping = aes(x = Codon, y = RSCUdiff, color = Org)) +
+  # All dots
+  geom_point(size = 3) +
+  # Outliers
+  geom_point(data = pick(~Outliers == "outlier"), color = "black", shape = 1, size = 5) +
+  scale_color_manual(values = c( "HP1" = "#FFDE16",  "HS2" = "#0F75BC", "PSA_chr1" = "#56B4E9", "PSA_chr2" = "#CC79A7")) +
+  coord_flip() +
+  labs(
+    y = "RSCU Difference (against PSA chr1)", 
+    x = "Codon", 
+    color = "Organism"
+  )
+```
+
+## 4. RSCU Similarity Between PSA and its Phages
+
+For certain phage codons, the RSCU value (or tbe difference in the RSCU value between that phage and the host) is quite different. In this section, we will calculate the similarity in the RSCU vectors and explore which codons are the most different between the Helgoland phages and PSA.
+
+First, we will use the cosine similarity metric to compare the RSCU vectors between PSA and its phages. 
+```{r RSCU_cosine_similarity}
+# Helgoland
+lsa_PSA_HP1 <- cosine(RSCU_mat_Helgoland[ , "HP1"], RSCU_mat_Helgoland[ , "PSA_fullseq"])
+lsa_PSA_HS2 <- cosine(RSCU_mat_Helgoland[ , "HS2"], RSCU_mat_Helgoland[ , "PSA_fullseq"])
+```
+
+Return the values
+```{r RSCU_cosine_similarity_returnvalues, echoes = FALSE}
+# Print values
+cat("Cosine similarity between PSA and HP1:", lsa_PSA_HP1)
+cat("Cosine similarity between PSA and HS2:", lsa_PSA_HS2)
+```
+
+### B. Determine which Phage Codon is Responsible for Dissimilarity Between Phages and Host
+
+Since I will be applying this concept multiple times later in this file, I am making a function that automates this process. 
+To determine which codon is responsible for the dissimilarity between the phage and the host, the RSCU of each codon in the phage vector was iteratively set to the host RSCU and the cosine similarity was recomputed. Then, by taking the absolute difference between the original cosine similarity value and the iteratively derived cosine similarity, we can determine which which codon have the highest impact on the overall phage-host codon mistmatch. This function only calculates the new cosine similarity when changing the phage RSCU vector. I take the difference after.
+```{r func_codon_deviate}
+codon_deviate <- function(uco_matrix, RSCU_phagename, RSCU_hostname, dt_aa_to_codon){
+  
+  # Initialize empty matrix
+  dt_deviate <- matrix(NA, nrow = 64, ncol = 1)
+  rownames(dt_deviate) <- rownames(uco_matrix)
+  
+  # Setup 
+  RSCU_phage <- uco_matrix[ , RSCU_phagename]
+  RSCU_host <- uco_matrix[ , RSCU_hostname]
+  
+  # Create reset vectors for loop to come
+  RSCU_phage_reset <- RSCU_phage
+  RSCU_host_reset <- RSCU_host
+  
+  # Populate matrix
+  for(i in 1:nrow(dt_deviate)){
+    RSCU_host_ith <- RSCU_host[i]
+    RSCU_phage[i] <- RSCU_host_ith
+    cos_comparison <- cosine(RSCU_phage, RSCU_host)
+    #print(cos_comparison) #worked
+    # Store value
+    dt_deviate[i, 1] <- cos_comparison
+    # Reset vectors
+    RSCU_phage <- RSCU_phage_reset
+    RSCU_host <- RSCU_host_reset
+  }
+  
+  # Add a codon and an amino acids in the dataframe
+  dt_deviate <- as.data.frame(dt_deviate)
+  dt_deviate["codon"] <- rownames(dt_deviate)
+  dt_deviate["aa"] <- NA
+  for(i in 1:nrow(dt_deviate)){
+    curr_codon <- dt_deviate$codon[i]
+    amino_acid <- as.character(dt_aa_to_codon$AA[which(dt_aa_to_codon$codon == curr_codon)])
+    dt_deviate$aa[i] <- amino_acid
+  }
+  
+  # Return dataframe
+  return(dt_deviate)
+  
+}
+```
+
+Let's apply the function to the data we have. 
+```{r RSCU_PSAandPhages_computedeviations}
+# Compute deviations
+HP1_deviate <- codon_deviate(RSCU_mat_Helgoland, "HP1", "PSA_fullseq", dt_aa_codon)
+HS2_deviate <- codon_deviate(RSCU_mat_Helgoland, "HS2", "PSA_fullseq", dt_aa_codon)
+```
+
+Let's format, calculate the difference in RSCU, and combined the dataframes into a single dataframe
+```{r RSCU_PSAandPhages_deviations_formatting}
+# Add organism column
+HP1_deviate["Org"] <- "HP1"
+HS2_deviate["Org"] <- "HS2"
+
+# Combine
+Helgoland_RSCU_comparison <- rbind(HP1_deviate, HS2_deviate)
+
+# Take the difference
+HP1_diff <- as.numeric(lsa_PSA_HP1) - HP1_deviate$V1
+HS2_diff <- as.numeric(lsa_PSA_HS2) - HS2_deviate$V1
+
+# Replace values in dataframe with the difference
+HP1_deviate$V1 <- HP1_diff
+HS2_deviate$V1 <- HS2_diff
+
+# Combine
+Helgoland_RSCU_comparison_diff <- rbind(HP1_deviate, HS2_deviate)
+
+# Add codon frequency to dataframe
+freq_phages <- c(uco_HP1$freq, uco_HS2$freq)
+Helgoland_RSCU_comparison_diff["Frequency"] <- freq_phages
+```
+
+### C. Bubbleplot: Difference in Cosine Similarity vs Codons/AA
+
+Codon on y-axis. 
+```{r bubbleplot_RSCUdeviance_bycodon, fig.dim = c(7, 11), fig.align = 'center'}
+# Reorganize factor levels
+Helgoland_RSCU_comparison_diff$codon <- fct_rev(reorder(Helgoland_RSCU_comparison_diff$codon, Helgoland_RSCU_comparison_diff$V1, FUN = min))
+
+# Plot
+ggplot(data = Helgoland_RSCU_comparison_diff, mapping = aes(x = codon, y = abs(V1), color = Org, size = Frequency)) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = c( "HP1" = "#FFDE16",  "HS2" = "#0F75BC", "PSA_chr1" = "#56B4E9", "PSA_chr2" = "#CC79A7")) +
+  coord_flip() +
+  labs(
+    y = "Impact of codon on phage-host cosine similarity",
+    x = "Amino Acids", 
+    color = "Organism"
+  )
+```
+
+Amino acids on y-axis.
+```{r bubbleplot_RSCUdeviance_byaa, fig.dim = c(7, 11), fig.align = 'center'}
+# Reorganize factor levels
+Helgoland_RSCU_comparison_diff$aa <- fct_rev(reorder(Helgoland_RSCU_comparison_diff$aa, Helgoland_RSCU_comparison_diff$V1, FUN = min))
+
+# Plot
+ggplot(data = Helgoland_RSCU_comparison_diff, mapping = aes(x = aa, y = abs(V1), color = Org, size = Frequency)) +
+  geom_point(alpha = 0.7) +
+  scale_color_manual(values = c( "HP1" = "#FFDE16",  "HS2" = "#0F75BC", "PSA_chr1" = "#56B4E9", "PSA_chr2" = "#CC79A7")) +
+  coord_flip() +
+  labs(
+    y = "Impact of codon on phage-host cosine similarity",
+    x = "Amino Acids", 
+    color = "Organism"
+  )
+```
+
+# III. Codon Bias of Phage-Host Pair using NCBI Dataset
+
+In the previous section, we only compared two phages, HP1 and HS2. Here, we are interested in understanding the codon bias between phage and host of as many phages. To do so, I will use the phage sequences uploaded on NCBI. 
+
+We will repeat the same methods as the previous section, but this time we will apply to a much much larger dataset. Let's get started!
+
+## 1. Setup: Load Files (Metadata and Sequences)
+
+### A. Load Phage Metadata
+
+The Genbank files of the phages were downloaded. I used a Python script to retrieve various facts about those phages (genome length, phage family, accession number, phage name, host name, etc...). 
+```{r load_phage_metadata}
+# Set working directory
+setwd("~/Documents/Research/PhageHostPrediction/PostThesis/Data/Phages/info/FromGenBank/")
+
+# Load phage metadata
+dt_gb_arc_meta <- read.table(file = "curated_metadata_archaeaphages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
+dt_gb_bac_meta <- read.table(file = "curated_metadata_bacteriophages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
+
+# Combine the dataframes
+dt_metadata_phage <- rbind(dt_gb_arc_meta, dt_gb_bac_meta)
+```
+
+### B. Load Sequences
+
+Now I need to determine how many of those phages I will be able to use. Not all phages sequenced have a sequenced host that we can use.
+Furthermore, I will use the following requirements: 
+1. At least one sequence is available for the host
+2. If we only know the genus of the host (but not the exact species), we will not consider those cases.
+```{r}
+# Extract unique host names
+vec_hostname <- unique(dt_metadata_phage$Host_name)
+
+# Retrieve host name where we have at least species taxa information 
+vec_hostname_species <- str_extract(vec_hostname, "[[:alpha:]]*_[[:alpha:]]{3,}")
+vec_hostname_species <- vec_hostname_species[!is.na(vec_hostname_species)]
+
+# Subset phage metadata to only contains cases where we have species level available for host
+dt_metadata_cb <- dt_metadata_phage[which(dt_metadata_phage$Host_name %in% vec_hostname_species), ]
+```
+
+All in all, I have 1872 phage-host pairs. But again, I will be limited by the number of bacterial/archaeal genomes sequences available. 
+```{r, results = 'hide'}
+# Set working directory
+setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Host/NCBI_data/")
+
+# Create list to hold the sequences
+vec_filenames <- list.files(pattern = ".fasta")
+list_fastafiles <- vector(mode = "list", length = length(vec_filenames))
+
+# Load sequences
+for(i in 1:length(list_fastafiles)){
+  curr_filename <- vec_filenames[i]
+  print(curr_filename)
+  ith_name <- str_extract(curr_filename, "[[:alpha:]]*_[[:alpha:]]*")
+  seq_host <- as.SeqFastadna(read.fasta(file = curr_filename, as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+  list_fastafiles[[i]] <- seq_host
+  names(list_fastafiles)[i] <- ith_name
+}
+
+# Retrieve sequence for fasta file
+for(i in 1:length(list_fastafiles)){
+  ith_seq <- list_fastafiles[[i]]
+  list_fastafiles[[i]] <- ith_seq[[1]]
+}
+
+# How many hosts I have?
+#length(vec_name)
+```
+
+Alright, so I only have so many unique complete bacterial genome sequences (NCBI is down so I can't get more sequences unfortunately). Now, let's subset my phage metadata to see how many pairs I can test. 
+```{r}
+# Retrieve names from list
+vec_name <- names(list_fastafiles)
+
+# Subset phage metadata
+dt_metadata_cb <- dt_metadata_phage[which(dt_metadata_phage$Host_name %in% vec_name), ]
+```
+
+Sweet, I can make 1187 comparison. Let's do it!
+But first, I also need to load the phage sequences. 
+```{r, results = 'hide'}
+# Set working directory
+setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Phages/NCBIphages/")
+
+# Get phage names to load
+vec_phagename <- dt_metadata_cb$accession
+
+# Load sequences
+list_NCBIphageseq <- vector(mode = "list", length = length(vec_phagename))
+for(i in 1:length(list_NCBIphageseq)){
+  # Get ith filename
+  print(i)
+  temp <- vec_phagename[i]
+  ith_filename <- list.files(path = getwd(), pattern = temp)
+  print(ith_filename)
+  # Load sequence
+  seq_phage <- as.SeqFastadna(read.fasta(file = ith_filename, as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
+  # Retrieve seq only
+  seq_phage <- seq_phage[[1]]
+  # Store seq
+  list_NCBIphageseq[[i]] <- seq_phage
+  # Name list
+  names(list_NCBIphageseq)[i] <- vec_phagename[i]
+}
+```
+
+## 2. Data Computations
+
+### A. Compute Codon Usage Indices
+
+Compute codon usage indices for the hosts sequences. This is computational extensive, and might take ~15 minutes to complete. 
+```{r, results = 'hide'}
+# Create list to hold the uco dataframes for host
+list_NCBIhost_uco <- vector(mode = "list", length = length(list_fastafiles))
+
+# Compute uco for each host sequence
+for(i in 1:length(list_NCBIhost_uco)){
+  # Retrieve sequence
+  ith_seq <- list_fastafiles[[i]]
+  print(i)
+  # Compute uco 
+  temp_uco <- uco(ith_seq, as.data.frame = TRUE)
+  # Store uco 
+  list_NCBIhost_uco[[i]] <- temp_uco
+}
+
+# Name list
+names(list_NCBIhost_uco) <- names(list_fastafiles)
+```
+
+Compute codon usage for the phage sequences. 
+```{r, results = 'hide'}
+# Calculate uco
+list_NCBIphage_uco <- vector(mode = "list", length = length(list_NCBIphageseq))
+for(i in 1:length(list_NCBIphage_uco)){
+  # Retrieve sequence
+  ith_seq <- list_NCBIphageseq[[i]]
+  print(i)
+  # Compute uco 
+  temp_uco <- uco(ith_seq, as.data.frame = TRUE)
+  # Store uco 
+  list_NCBIphage_uco[[i]] <- temp_uco
+}
+names(list_NCBIphage_uco) <- names(list_NCBIphageseq)
+```
+
+### B. Create RSCU Matrices
+
+Next, I need to make a list that will hold the RSCU matrices.
+```{r, results = 'hide'}
+# Initialize empty list
+list_NCBI_ucocombined <- vector(mode = "list", length = length(list_NCBIphage_uco))
+names(list_NCBI_ucocombined) <- names(list_NCBIphage_uco)
+
+# Populate list
+for(i in 1:length(list_NCBI_ucocombined)){
+  # Retrieve phage accession
+  curr_phage <- names(list_NCBI_ucocombined)[i]
+  # Subset phage metadata by curr_phage
+  temp_dt <- dt_metadata_cb[which(dt_metadata_cb$accession == curr_phage), ]
+  # Retrieve host name
+  curr_host <- temp_dt$Host_name
+  print(curr_host)
+  # Retrieve dataframes
+  temp_hostdt <- list_NCBIhost_uco[[curr_host]]
+  temp_hostdt["Org"] <- unique(curr_host)
+  temp_phagedt <- list_NCBIphage_uco[[curr_phage]]
+  temp_phagedt["Org"] <- unique(curr_phage)
+  # Combine dataframes
+  uco_combined_dt <- rbind(temp_hostdt, temp_phagedt)
+  # Store dt in list
+  list_NCBI_ucocombined[[i]] <- uco_combined_dt
+}
+
+# Create a new list to be populated
+list_NCBI_RSCUmat <- vector(mode = "list", length = length(list_NCBI_ucocombined))
+names(list_NCBI_RSCUmat) <- names(list_NCBI_ucocombined)
+
+# Function: cb_uco_mat
+cb_uco_mat <- function(uco_dt){
+  
+  # Initialize matrix to be returned
+  mat_toreturn <- matrix(NA, nrow = 64, ncol = length(unique(uco_dt$Org)))
+  rownames(mat_toreturn) <- rownames(uco_dt[1:64, ])
+  colnames(mat_toreturn) <- unique(uco_dt$Org)
+  #return(mat_toreturn) #worked
+  
+  # Populate matrix
+  for(i in 1:ncol(mat_toreturn)){
+    temp_subset <- uco_dt[which(uco_dt$Org == colnames(mat_toreturn)[i]), ]
+    for(j in 1:nrow(mat_toreturn)){
+      mat_toreturn[j, i] <- temp_subset$RSCU[j]
+    }
+  }
+  
+  # Return matrix
+  return(mat_toreturn)
+}
+
+# Populate list
+for(i in 1:length(list_NCBI_RSCUmat)){
+  print(i)
+  # Retrieve ith dt
+  ith_dt <- list_NCBI_ucocombined[[i]]
+  # Create RSCU matrix
+  RSCU_mat <- cb_uco_mat(ith_dt)
+  # Store the RSCU mat
+  list_NCBI_RSCUmat[[i]] <- RSCU_mat
+}
+```
+
+To look into, but some of the dataframe have missing values. Ill remove them for now 
+```{r}
+# Remove missing values
+list_NCBI_RSCUmat[[19]] <- NULL
+list_NCBI_RSCUmat[[1160]] <- NULL
+```
+
+### C. Compute Cosine Similarity
+
+Next, let's compute the cosine similarity.
+```{r, results = 'hide'}
+# Initialize empty list
+list_NCBI_cos <- vector(mode = "list", length = length(list_NCBI_RSCUmat))
+
+# Populate list
+for(i in 1:length(list_NCBI_cos)){
+  
+  # Retrieve current RSCU mat
+  curr_mat <- list_NCBI_RSCUmat[[i]]
+  print(i)
+
+  # Create dataframe to hold cosine similarity
+  temp_dt <- data.frame(matrix(ncol = ncol(curr_mat) - 1, nrow = 1))
+
+  # Compute cosine measure
+  for(j in 1:ncol(temp_dt)){
+    cosine_sim <- cosine(curr_mat[,1], curr_mat[, j+1])
+    # Store value
+    temp_dt[1,j] <- cosine_sim
+  }
+  
+  # Add column names
+  ret_cnames <- colnames(curr_mat)
+  colnames(temp_dt) <- ret_cnames[2:length(ret_cnames)]
+
+  # Store dt in list
+  list_NCBI_cos[[i]] <- temp_dt
+  
+}
+```
+
+### D. delta(abs(Original cosine similarity - New cosine similarity))
+
+Now, I will get the difference when replacing phage value vector with host's. 
+```{r, results = 'hide'}
+# Function: codon_deviate
+cb_codon_deviate <- function(uco_matrix, RSCU_phageloc, RSCU_hostloc, dt_aa_to_codon){
+  
+  # Initialize empty matrix
+  dt_deviate <- matrix(NA, nrow = 64, ncol = 1)
+  rownames(dt_deviate) <- rownames(uco_matrix)
+  
+  # Setup 
+  RSCU_phage <- uco_matrix[ , RSCU_phageloc]
+  RSCU_host <- uco_matrix[ , RSCU_hostloc]
+  
+  # Create reset vectors for loop to come
+  RSCU_phage_reset <- RSCU_phage
+  RSCU_host_reset <- RSCU_host
+  
+  # Populate matrix
+  for(i in 1:nrow(dt_deviate)){
+    RSCU_host_ith <- RSCU_host[i]
+    RSCU_phage[i] <- RSCU_host_ith
+    cos_comparison <- cosine(RSCU_phage, RSCU_host)
+    print(cos_comparison) #worked
+    # Store value
+    dt_deviate[i, 1] <- cos_comparison
+    # Reset vectors
+    RSCU_phage <- RSCU_phage_reset
+    RSCU_host <- RSCU_host_reset
+  }
+  
+  # Add a codon and an amino acids in the dataframe
+  dt_deviate <- as.data.frame(dt_deviate)
+  dt_deviate["codon"] <- rownames(dt_deviate)
+  dt_deviate["aa"] <- NA
+  for(i in 1:nrow(dt_deviate)){
+    curr_codon <- dt_deviate$codon[i]
+    amino_acid <- as.character(dt_aa_to_codon$AA[which(dt_aa_to_codon$codon == curr_codon)])
+    dt_deviate$aa[i] <- amino_acid
+  }
+  
+  # Return dataframe
+  return(dt_deviate)
+  
+}
+
+# Create new list
+list_NCBI_codondeviate <- vector(mode = "list", length = length(list_NCBI_RSCUmat))
+names(list_NCBI_codondeviate) <- names(list_NCBI_RSCUmat)
+
+# Populate list
+for(i in 1:length(list_NCBI_codondeviate)){
+  
+  # Retrieve uco matrix
+  curr_uco_matrix <- list_NCBI_RSCUmat[[i]]
+  
+  # Create empty list to be stored in the list
+  temp_list <- vector(mode = "list", length = ncol(curr_uco_matrix) - 1)
+  
+  for(j in 1:length(temp_list)){
+    
+    # Run codon deviate
+    temp_dt <- cb_codon_deviate(curr_uco_matrix, RSCU_phageloc = j + 1, RSCU_hostloc = 1, dt_aa_to_codon = dt_aa_codon)
+    temp_dt["Org"] <- colnames(curr_uco_matrix)[j + 1]
+    
+    # Store result in list
+    temp_list[[j]] <- temp_dt
+    
+  }
+  
+  list_NCBI_codondeviate[[i]] <- temp_list
+
+}
+
+# Create list 
+list_NCBI_codondiff <- list_NCBI_codondeviate
+
+# Populate list
+for(i in 1:length(list_NCBI_codondiff)){
+  
+  # Retrieve ith list
+  curr_list <- list_NCBI_codondiff[[i]]
+  
+  # Retrieve cosine similarity dt
+  curr_dt_cosinesim <- list_NCBI_cos[[i]]
+  
+  # Create temporary list to hold dt
+  temp_list <- vector(mode = "list", length = length(curr_list))
+  
+  # Retrieve each dt within the list
+  for(j in 1:length(curr_list)){
+    
+    # Retrieve original cosine similarity
+    orig_cos <- curr_dt_cosinesim[1, j]
+    
+    # Retrieve jth dt
+    curr_dt <- curr_list[[j]]
+    
+    # Compute difference
+    diff <- as.numeric(orig_cos) - curr_dt$V1 
+    
+    # Store value
+    curr_dt$V1 <- diff
+    
+    # Store dt in list
+    curr_list[[j]] <- curr_dt
+    
+  }
+  
+  combined_dt <- do.call(rbind, curr_list)
+  list_NCBI_codondiff[[i]] <- combined_dt
+  
+}
+```
+
+Now that we have a list with the desired values, we can combined all the elements of the list into a single dataframe. T
+```{r}
+# Combine all the dataframes into one
+NCBI_final_dt <- do.call(rbind, list_NCBI_codondiff)
+names(NCBI_final_dt)[names(NCBI_final_dt) == 'Org'] <- 'PhageAcc'
+```
+
+## 3. Plots
+
+First, let's add phage family column to dataframe
+```{r}
+# Add column
+NCBI_final_dt["PhageFamily"] <- NA
+
+# Populate new column
+for(i in 1:nrow(NCBI_final_dt)){
+  # Current phage
+  curr_phage <- NCBI_final_dt$PhageAcc[i]
+  # Subset metadata
+  temp_dt <- dt_metadata_cb[which(dt_metadata_cb$accession == curr_phage), ]
+  # Retrieve phage family
+  NCBI_final_dt$PhageFamily[i] <- temp_dt$family
+}
+```
+
+By phage family
+```{r, fig.dim = c(7, 8), fig.align = 'center'}
+ggplot(data = NCBI_final_dt, mapping = aes(x = PhageFamily, y = abs(V1))) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1))
+```
+
+Compare to HS2 and HP1; subset to only have Caudovirales
+```{r}
+# Create dummy column for plotting purposes
+NCBI_final_dt["AllOrg"] <- "All"
+
+# Subset by Caudo
+NCBI_final_dt_caudo <- NCBI_final_dt[which(NCBI_final_dt$PhageFamily == "Podoviridae" | NCBI_final_dt$PhageFamily == "Siphoviridae" | NCBI_final_dt$PhageFamily == "Myoviridae"), ]
+
+# Plot
+ggplot(data = NCBI_final_dt_caudo, mapping = aes(x = PhageFamily, y = abs(V1))) +
+  geom_boxplot() +
+  geom_boxplot(data = Helgoland_RSCU_comparison_diff, mapping = aes(x = Org, y = abs(V1))) + 
+  geom_boxplot(data = NCBI_final_dt, aes(x = AllOrg, y = abs(V1))) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1)) 
+  
+
+# Create subsets
+subset_myo <- NCBI_final_dt[which(NCBI_final_dt$PhageFamily == "Myoviridae"), ]
+subset_podo <- NCBI_final_dt[which(NCBI_final_dt$PhageFamily == "Podoviridae"), ]
+subset_sipho <- NCBI_final_dt[which(NCBI_final_dt$PhageFamily == "Siphoviridae"), ]
+subset_HP1 <- Helgoland_RSCU_comparison_diff[which(Helgoland_RSCU_comparison_diff$Org == "HP1"), ]
+subset_HS2 <- Helgoland_RSCU_comparison_diff[which(Helgoland_RSCU_comparison_diff$Org == "HS2"), ]
+
+
+# Statistical test
+ttest_HP1_all <- wilcox.test(NCBI_final_dt$V1, subset_HP1$V1)
+ttest_HP1_myo <- wilcox.test(subset_myo$V1, subset_HP1$V1)
+ttest_HP1_podo <- wilcox.test(subset_podo$V1, subset_HP1$V1)
+ttest_HP1_sipho <- wilcox.test(subset_sipho$V1, subset_HP1$V1)
+
+ttest_HS2_all <- wilcox.test(NCBI_final_dt$V1, subset_HS2$V1)
+ttest_HS2_myo <- wilcox.test(subset_myo$V1, subset_HS2$V1)
+ttest_HS2_podo <- wilcox.test(subset_podo$V1, subset_HS2$V1)
+ttest_HS2_sipho <- wilcox.test(subset_sipho$V1, subset_HS2$V1)
+
+ttest_HP1_HS2 <- wilcox.test(subset_HS2$V1, subset_HP1$V1)
+
+ttest_myo_podo <- wilcox.test(subset_myo$V1, subset_podo$V1)
+ttest_myo_sipho <- wilcox.test(subset_myo$V1, subset_sipho$V1)
+ttest_podo_sipho <- wilcox.test(subset_podo$V1, subset_sipho$V1)
+
+ttest_myo_all <- wilcox.test(subset_myo$V1, NCBI_final_dt$V1)
+ttest_sipho_all <- wilcox.test(subset_sipho$V1, NCBI_final_dt$V1)
+ttest_podo_all <- wilcox.test(subset_sipho$V1, NCBI_final_dt$V1)
+
+
+print(ttest_HP1_all)
+print(ttest_HP1_myo)
+print(ttest_HP1_podo)
+print(ttest_HP1_sipho)
+
+print(ttest_HS2_all)
+print(ttest_HS2_myo)
+print(ttest_HS2_podo)
+print(ttest_HS2_sipho)
+
+print(ttest_HP1_HS2)
+
+print(ttest_myo_podo)
+print(ttest_myo_sipho)
+print(ttest_podo_sipho)
+
+print(ttest_myo_all)
+print(ttest_sipho_all)
+print(ttest_podo_all)
+```
+
+Let's try to pick random values for myoviridae phages and compare them to HP1. 
+Here, I will randomly pick a value for each codon for the myo (does not have to come from the same phage-host pair).
+Best approach is to reform the dataframes, where each row are a unique codon, and each column is a different phage. 
+So first, let's reformat the dataframes.
+```{r}
+codon64_vec <- NCBI_final_dt$codon[0:64]
+
+# Create empty dataframe
+reformatted_myo <- data.frame(matrix(nrow = 64, ncol = length(unique(subset_myo$PhageAcc))))
+rownames(reformatted_myo) <- codon64_vec
+colnames(reformatted_myo) <- unique(subset_myo$PhageAcc)
+# Populate dataframe
+for(i in 1:ncol(reformatted_myo)){
+  # Get phage acc
+  curr_phage <- colnames(reformatted_myo)[i]
+  # Retrieve values
+  vec_value <- subset_myo$V1[which(subset_myo$PhageAcc == curr_phage)]
+  # Store values
+  reformatted_myo[, i] <- vec_value
+}
+
+# Create empty dataframe
+reformatted_podo <- data.frame(matrix(nrow = 64, ncol = length(unique(subset_podo$PhageAcc))))
+rownames(reformatted_podo) <- codon64_vec
+colnames(reformatted_podo) <- unique(subset_podo$PhageAcc)
+# Populate dataframe
+for(i in 1:ncol(reformatted_podo)){
+  # Get phage acc
+  curr_phage <- colnames(reformatted_podo)[i]
+  # Retrieve values
+  vec_value <- subset_podo$V1[which(subset_podo$PhageAcc == curr_phage)]
+  # Store values
+  reformatted_podo[, i] <- vec_value
+}
+
+
+# Create empty dataframe
+reformatted_sipho <- data.frame(matrix(nrow = 64, ncol = length(unique(subset_sipho$PhageAcc))))
+rownames(reformatted_sipho) <- codon64_vec
+colnames(reformatted_sipho) <- unique(subset_sipho$PhageAcc)
+# Populate dataframe
+for(i in 1:ncol(reformatted_sipho)){
+  # Get phage acc
+  curr_phage <- colnames(reformatted_sipho)[i]
+  # Retrieve values
+  vec_value <- subset_sipho$V1[which(subset_sipho$PhageAcc == curr_phage)]
+  # Store values
+  reformatted_sipho[, i] <- vec_value
+}
+
+# Create empty dataframe
+reformatted_all <- data.frame(matrix(nrow = 64, ncol = length(unique(NCBI_final_dt$PhageAcc))))
+rownames(reformatted_all) <- codon64_vec
+colnames(reformatted_all) <- unique(NCBI_final_dt$PhageAcc)
+# Populate dataframe
+for(i in 1:ncol(reformatted_all)){
+  # Get phage acc
+  curr_phage <- colnames(reformatted_all)[i]
+  # Retrieve values
+  vec_value <- NCBI_final_dt$V1[which(NCBI_final_dt$PhageAcc == curr_phage)]
+  # Store values
+  reformatted_all[, i] <- vec_value
+}
+
+
+```
+
+Testing randomly picking values
+```{r}
+ncol_of_dt <- c(1:ncol(reformatted_myo))
+sample(ncol_of_dt, 1)
+```
+
+## 4. Pair wise t test
+
+```{r}
+iteration <- 1000
+iteration_list <- vector(mode = "list", length = iteration)
+
+# Now we need to fill the rest. I will sample random values across phage accession (but not random for the codon)
+list_dt <- list(reformatted_myo, reformatted_podo, reformatted_sipho, reformatted_all)
+names(list_dt) <- c("Myo", "Podo", "Sipho", "All")
+col_of_dt <- c("Myo", "Podo", "Sipho", "All")
+
+for(xx in 1:iteration){
+  
+  cat("Current iterations is:", xx, "\n")
+  
+  ### 1
+
+  # Create empty dataframe
+  dt_codon_values <- data.frame(matrix(ncol = 7, nrow = 64))
+  colnames(dt_codon_values) <- c("Myo", "Podo", "Sipho", "All", "HS2", "HP1", "Codon")
+  # The codon, HS2, and HP1 columns will always be the same. Let's get the values in for those columns
+  dt_codon_values$Codon <- codon64_vec
+  dt_codon_values$HS2 <- subset_HS2$V1
+  dt_codon_values$HP1 <- subset_HP1$V1
+
+  # Now we need to fill the rest. I will sample random values across phage accession (but not random for the codon)
+  list_dt <- list(reformatted_myo, reformatted_podo, reformatted_sipho, reformatted_all)
+  names(list_dt) <- c("Myo", "Podo", "Sipho", "All")
+
+  numb_per_category <- c(ncol(reformatted_myo), ncol(reformatted_podo), ncol(reformatted_sipho), ncol(reformatted_all))
+  for(i in 1:length(col_of_dt)){
+  
+    # Retrieve relevant dataframe (based on phage family or all)
+    name_subset <- col_of_dt[i]
+    curr_dt <- list_dt[[name_subset]]
+  
+    # Create possible sample vector
+    ncol_of_dt <- c(1:ncol(curr_dt))
+    cat("Sample size is:", length(ncol_of_dt), "\n")
+  
+    for(j in 1:nrow(dt_codon_values)){
+    
+      # Retrieve relevant row and make it into a vector
+      values_vector <- as.vector(curr_dt[j, ])
+    
+      # Get a random value from each row of the curr_dt and store in the dt_codon_values
+      random_number <- sample(ncol_of_dt, 1)
+      temp_value <- values_vector[random_number]
+      #print(temp_value) #looks right to me!
+    
+      # Store value
+      dt_codon_values[j, i] <- temp_value
+    
+    }
+  }
+
+  #head(dt_codon_values)
+  
+  ### 2
+
+  melted_dt_codon_values <- melt(dt_codon_values)
+  colnames(melted_dt_codon_values) <- c("Codon", "Org", "V1")
+
+  ### 3
+
+  stat_test <- pairwise.t.test(melted_dt_codon_values$V1, melted_dt_codon_values$Org)
+  #print(stat_test)
+  mymat <- stat_test[[3]]
+  #print(mymat)
+
+  ### 4
+
+  # Store values from section 3
+  # Ill store as vectors, and we should be able to rbind the vectors later on
+
+  pairname_vec <- c("HS2-HP1", "HS2_All", "HS2_Myo", "HS2_Podo", "HS2_Sipho", "HP1_All", "HP1_Myo", "HP1_Podo", "HP1_Sipho", "Myo_Podo", "Myo_Sipho", "Sipho_Podo", "All_Myo", "All_Podo", "All_Sipho")
+
+  stats_pvalues_vec <- c(mymat["HP1", "HS2"], mymat["HS2", "All"], mymat["HS2", "Myo"], mymat["HS2", "Podo"], mymat["HS2", "Sipho"], mymat["HP1", "All"], mymat["HP1", "Myo"], mymat["HP1", "Podo"], mymat["HP1", "Sipho"], mymat["Podo", "Myo"], mymat["Sipho", "Myo"], mymat["Sipho", "Podo"], mymat["All", "Myo"], mymat["All", "Podo"], mymat["All", "Sipho"])
+
+  iteration_list[[xx]] <- stats_pvalues_vec
+  
+}
+
+iteration_stat_dt <- as.data.frame(do.call(rbind, iteration_list))
+colnames(iteration_stat_dt) <- pairname_vec
+iteration_number_vec <- c(1:iteration)
+iteration_stat_dt["IterationNumber"] <- iteration_number_vec
+```
+
+One more thing. Need to convert previous dataframe into cumulative averages for each column (except iteration. 
+```{r}
+cumavg_stat_dt <- iteration_stat_dt
+temp_list <- vector(mode = "list", length = ncol(iteration_stat_dt) - 1)
+for(i in 1:ncol(cumavg_stat_dt)){
+  temp_vec <- cumavg_stat_dt[, i]
+  avg_cum <- as.vector(cumsum(temp_vec) / seq_along(temp_vec))
+  cumavg_stat_dt[, i] <- avg_cum
+}
+cumavg_stat_dt["IterationNumber"] <- iteration_number_vec
+tail(cumavg_stat_dt)
+
+# Finally melt it
+cumavg_stat_melted <- melt(cumavg_stat_dt, id = "IterationNumber")
+```
+
+Alright, finally we can plot!
+```{r}
+ggplot(data = cumavg_stat_melted, mapping = aes(x = IterationNumber, y = value, color = variable)) +
+  geom_line(size = 1) +
+  facet_wrap(~variable) +
+  labs(
+    x = "Iteration Number", 
+    y = "Cumulative averaged p-value"
+  )
+```
+
+
