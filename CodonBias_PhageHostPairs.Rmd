@@ -13,8 +13,8 @@ output:
 
 Load libraries
 ```{r setwd_and_loadpackages, message = FALSE, warning = FALSE}
-# Set working directory
-setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/")
+# Create reset directory
+reset_dir <- getwd()
 
 # Load libraries
 library(ggplot2)
@@ -81,7 +81,7 @@ The previous section focused on all Helgoland phages. Here we will just contrast
 Loading HS2 and HP1 sequences. 
 ```{r load_fasta_PSAphages}
 # Set working directory
-setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Phages/Helgoland/")
+setwd("Sequences/Phages/Helgoland/")
 
 # Load fasta files
 seq_HP1 <- as.SeqFastadna(read.fasta(file = "HP1_2582581228.fna", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
@@ -90,12 +90,15 @@ seq_HS2 <- as.SeqFastadna(read.fasta(file = "HS2_2582581232.fna", as.string = FA
 # Retrieve sequences only for each Helgoland phages
 seq_HP1 <- seq_HP1[[1]]
 seq_HS2 <- seq_HS2[[1]]
+
+# Reset working directory
+setwd(reset_dir)
 ```
 
 Now, let's load the host sequences. For PSA, it has two chromosomes. I also have a version where the two chromosomes are linked together. I will load all the two different versions. 
 ```{r load_fasta_PSAhost}
 # Set working directory
-setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Host/")
+setwd("Sequences/Host/")
 
 # Load PSA sequence (original file)
 seq_PSA <- as.SeqFastadna(read.fasta(file = "PSA_1315_PacBio_final.assembly.fasta", as.string = FALSE, forceDNAtolower = FALSE, seqonly = FALSE, strip.desc = FALSE))
@@ -106,6 +109,9 @@ seq_PSACombined <- as.SeqFastadna(read.fasta(file = "PSA_combined.fasta", as.str
 seq_PSA_chr1 <- seq_PSA[[1]]
 seq_PSA_chr2 <- seq_PSA[[2]]
 seq_PSACombined <- seq_PSACombined[[1]]
+
+# Reset working directory
+setwd(reset_dir)
 ```
 
 ### B. Compute Codon Usage Indices (uco)
@@ -495,12 +501,9 @@ We will repeat the same methods as the previous section, but this time we will a
 
 The Genbank files of the phages were downloaded. I used a Python script to retrieve various facts about those phages (genome length, phage family, accession number, phage name, host name, etc...). 
 ```{r load_phage_metadata}
-# Set working directory
-setwd("~/Documents/Research/PhageHostPrediction/PostThesis/Data/Phages/info/FromGenBank/")
-
 # Load phage metadata
-dt_gb_arc_meta <- read.table(file = "curated_metadata_archaeaphages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
-dt_gb_bac_meta <- read.table(file = "curated_metadata_bacteriophages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
+dt_gb_arc_meta <- read.table(file = "metadata_archaea_phages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
+dt_gb_bac_meta <- read.table(file = "metadata_bacteria_phages.csv", header = TRUE, stringsAsFactors = FALSE, sep = ",", na.strings = c(""))
 
 # Combine the dataframes
 dt_metadata_phage <- rbind(dt_gb_arc_meta, dt_gb_bac_meta)
@@ -527,7 +530,7 @@ dt_metadata_cb <- dt_metadata_phage[which(dt_metadata_phage$Host_name %in% vec_h
 All in all, I have 1872 phage-host pairs. But again, I will be limited by the number of bacterial/archaeal genomes sequences available. 
 ```{r, results = 'hide'}
 # Set working directory
-setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Host/NCBI_data/")
+setwd("Sequences/Host/NCBI_data/")
 
 # Create list to hold the sequences
 vec_filenames <- list.files(pattern = ".fasta")
@@ -551,6 +554,9 @@ for(i in 1:length(list_fastafiles)){
 
 # How many hosts I have?
 #length(vec_name)
+
+# Reset working directory
+setwd(reset_dir)
 ```
 
 Alright, so I only have so many unique complete bacterial genome sequences (NCBI is down so I can't get more sequences unfortunately). Now, let's subset my phage metadata to see how many pairs I can test. 
@@ -566,7 +572,7 @@ Sweet, I can make 1187 comparison. Let's do it!
 But first, I also need to load the phage sequences. 
 ```{r, results = 'hide'}
 # Set working directory
-setwd("~/Documents/Research/CodonAnalysis_PhagesAndTheirHost/Sequences/Phages/NCBIphages/")
+setwd("Sequences/Phages/NCBIphages/")
 
 # Get phage names to load
 vec_phagename <- dt_metadata_cb$accession
@@ -588,6 +594,9 @@ for(i in 1:length(list_NCBIphageseq)){
   # Name list
   names(list_NCBIphageseq)[i] <- vec_phagename[i]
 }
+
+# Reset working directory
+setwd(reset_dir)
 ```
 
 ## 2. Data Computations
